@@ -1,0 +1,16 @@
+export const Colors = {
+  BAN:      '#FF4444',
+  KICK:     '#FF8800',
+  MUTE:     '#FFCC00',
+  WARN:     '#FFB347',
+  SUCCESS:  '#57F287',
+  ERROR:    '#FF4444',
+  INFO:     '#5865F2',
+  MODLOG:   '#FF6B6B',
+  SETTINGS: '#5865F2',
+  BATTLE:   '#9B59B6',
+  TICKET:   '#1ABC9C',
+  NEUTRAL:  '#36393F',
+  SOFTBAN:  '#FF8800',
+  TIMEOUT:  '#FFCC00',
+} as const;

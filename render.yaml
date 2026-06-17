@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: velora-bot
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: NODE_ENV
+        value: production
