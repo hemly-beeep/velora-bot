@@ -838,4 +838,208 @@ export async function handleButton(i: ButtonInteraction, client: any) {
     await i.editReply({ embeds: [new EmbedBuilder().setColor(Colors.SUCCESS).setTitle(`${E.Tick} Ticket #${ticketId} closed`)], components: [] });
     return;
   }
+
+  // ==================== TICKET SEND PANEL ====================
+  if (id.startsWith('velora_ticket_sendpanel_')) {
+    if (!checkUser(i, id)) return;
+    await i.deferUpdate();
+    const gd = await GuildModel.findOne({ guildId: i.guild!.id });
+    const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = await import('discord.js');
+    const panelEmbed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle(`${E.Ticket} Support Tickets`)
+      .setDescription('Need help? Click the button below to open a support ticket.\nOur team will assist you as soon as possible.')
+      .setFooter({ text: i.guild!.name, iconURL: i.guild!.iconURL() || undefined });
+    const createBtn = new ButtonBuilder()
+      .setCustomId('velora_ticket_create_PUBLIC')
+      .setLabel('Create Ticket')
+      .setStyle(ButtonStyle.Primary);
+    const panelRow = new ActionRowBuilder<any>().addComponents(createBtn);
+    const ch = i.channel as any;
+    await ch.send({ embeds: [panelEmbed], components: [panelRow] });
+    await i.editReply({ embeds: [new EmbedBuilder().setColor(Colors.SUCCESS).setTitle(`${E.Tick} Ticket panel sent!`)], components: [] });
+    return;
+  }
+
+  // ==================== TICKET CREATE (PUBLIC) ====================
+  if (id === 'velora_ticket_create_PUBLIC') {
+    const gd = await GuildModel.findOne({ guildId: i.guild!.id });
+    if (!gd?.settings?.tickets?.enabled) {
+      return i.reply({ content: `${E.Cross} Ticket system is not enabled.`, ephemeral: true });
+    }
+    const TicketModel = require('../../schemas/Ticket').default;
+    const existing = await TicketModel.findOne({ guildId: i.guild!.id, userId: i.user.id, status: 'open' });
+    if (existing) {
+      return i.reply({ content: `${E.Cross} You already have an open ticket: <#${existing.channelId}>`, ephemeral: true });
+    }
+    await i.deferReply({ ephemeral: true });
+    const counter = (gd?.settings?.tickets?.counter || 0) + 1;
+    await GuildModel.findOneAndUpdate({ guildId: i.guild!.id }, { $inc: { 'settings.tickets.counter': 1 } });
+    const { ChannelType, PermissionFlagsBits } = await import('discord.js');
+    const supportRoles = gd?.settings?.tickets?.supportRoles || [];
+    const overwrites: any[] = [
+      { id: i.guild!.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: i.guild!.members.me!.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
+    ];
+    for (const roleId of supportRoles) {
+      overwrites.push({ id: roleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] });
+    }
+    try {
+      const ch = await i.guild!.channels.create({
+        name: `ticket-${counter}`,
+        type: ChannelType.GuildText,
+        parent: gd?.channels?.ticketCategory || undefined,
+        permissionOverwrites: overwrites,
+        reason: `Ticket #${counter} by ${i.user.tag}`,
+      });
+      await TicketModel.create({ guildId: i.guild!.id, userId: i.user.id, userTag: i.user.tag, channelId: ch.id, ticketId: counter, status: 'open' });
+      const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = await import('discord.js');
+      const ticketEmbed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle(`${E.Ticket} Ticket #${counter}`)
+        .setDescription(`Hello ${i.user}! Support staff will be with you shortly.\nDescribe your issue below.`)
+        .addFields({ name: 'Opened by', value: `${i.user.tag}`, inline: true }, { name: 'Ticket ID', value: `#${counter}`, inline: true });
+      const closeBtn = new ButtonBuilder().setCustomId(`velora_ticket_close_${counter}_${i.user.id}`).setLabel('Close Ticket').setStyle(ButtonStyle.Danger);
+      const ticketRow = new ActionRowBuilder<any>().addComponents(closeBtn);
+      await ch.send({ content: `${i.user} ${supportRoles.map((r: string) => `<@&${r}>`).join(' ')}`, embeds: [ticketEmbed], components: [ticketRow] });
+      await i.editReply({ content: `${E.Tick} Your ticket has been created: ${ch}` });
+    } catch (e: any) {
+      await i.editReply({ content: `${E.Cross} Failed to create ticket: ${e.message}` });
+    }
+    return;
+  }
+
+  // ==================== TICKET DELETE ====================
+  if (id.startsWith('velora_ticket_delete_')) {
+    if (!checkUser(i, id)) return;
+    await i.deferUpdate();
+    try {
+      await i.channel?.delete('Ticket deleted by moderator');
+    } catch {}
+    return;
+  }
+
+  // ==================== VERIFY BUTTON (PUBLIC) ====================
+  if (id === 'velora_verify_button_PUBLIC') {
+    const gd = await GuildModel.findOne({ guildId: i.guild!.id });
+    if (!gd?.settings?.verification?.enabled) {
+      return i.reply({ content: `${E.Cross} Verification is not enabled.`, ephemeral: true });
+    }
+    const verifiedRoleId = gd?.roles?.verifiedRole;
+    if (!verifiedRoleId) {
+      return i.reply({ content: `${E.Cross} No verified role configured. Ask an admin to run \`??setrole\`.`, ephemeral: true });
+    }
+    const member = i.member as any;
+    if (member.roles.cache.has(verifiedRoleId)) {
+      return i.reply({ content: `${E.Tick} You are already verified!`, ephemeral: true });
+    }
+    try {
+      await member.roles.add(verifiedRoleId, 'Verified via button');
+      await i.reply({ content: `${E.Tick} You have been verified! Welcome to **${i.guild!.name}**.`, ephemeral: true });
+    } catch (e: any) {
+      await i.reply({ content: `${E.Cross} Failed to verify: ${e.message}`, ephemeral: true });
+    }
+    return;
+  }
+
+  // ==================== SETTINGS — PREFIX ====================
+  if (id.startsWith('velora_settings_prefix_')) {
+    if (!checkUser(i, id)) return;
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+    const modal = new ModalBuilder().setCustomId(`velora_prefix_modal_${i.user.id}`).setTitle('Change Prefix');
+    const input = new TextInputBuilder().setCustomId('prefix').setLabel('New Prefix (1-3 characters)').setStyle(TextInputStyle.Short).setMinLength(1).setMaxLength(3).setPlaceholder('e.g. ! or ?? or .').setRequired(true);
+    modal.addComponents(new ActionRowBuilder<any>().addComponents(input));
+    await i.showModal(modal);
+    return;
+  }
+
+  // ==================== SETTINGS — ROLES ====================
+  if (id.startsWith('velora_settings_roles_')) {
+    if (!checkUser(i, id)) return;
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+    const modal = new ModalBuilder().setCustomId(`velora_settings_roles_modal_${i.user.id}`).setTitle('Configure Roles');
+    const modInput  = new TextInputBuilder().setCustomId('mod_role_id').setLabel('Moderator Role ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste role ID');
+    const adminInput = new TextInputBuilder().setCustomId('admin_role_id').setLabel('Admin Role ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste role ID');
+    const muteInput  = new TextInputBuilder().setCustomId('mute_role_id').setLabel('Muted Role ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste role ID');
+    const verInput   = new TextInputBuilder().setCustomId('verified_role_id').setLabel('Verified Role ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste role ID');
+    modal.addComponents(
+      new ActionRowBuilder<any>().addComponents(modInput),
+      new ActionRowBuilder<any>().addComponents(adminInput),
+      new ActionRowBuilder<any>().addComponents(muteInput),
+      new ActionRowBuilder<any>().addComponents(verInput),
+    );
+    await i.showModal(modal);
+    return;
+  }
+
+  // ==================== SETTINGS — CHANNELS ====================
+  if (id.startsWith('velora_settings_channels_')) {
+    if (!checkUser(i, id)) return;
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+    const modal = new ModalBuilder().setCustomId(`velora_settings_channels_modal_${i.user.id}`).setTitle('Configure Log Channels');
+    const modLogs    = new TextInputBuilder().setCustomId('mod_logs_id').setLabel('Mod Logs Channel ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste channel ID');
+    const serverLogs = new TextInputBuilder().setCustomId('server_logs_id').setLabel('Server Logs Channel ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste channel ID');
+    const welcome    = new TextInputBuilder().setCustomId('welcome_id').setLabel('Welcome Channel ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste channel ID');
+    const goodbye    = new TextInputBuilder().setCustomId('goodbye_id').setLabel('Goodbye Channel ID').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste channel ID');
+    modal.addComponents(
+      new ActionRowBuilder<any>().addComponents(modLogs),
+      new ActionRowBuilder<any>().addComponents(serverLogs),
+      new ActionRowBuilder<any>().addComponents(welcome),
+      new ActionRowBuilder<any>().addComponents(goodbye),
+    );
+    await i.showModal(modal);
+    return;
+  }
+
+  // ==================== SETTINGS — WELCOME ====================
+  if (id.startsWith('velora_settings_welcome_')) {
+    if (!checkUser(i, id)) return;
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+    const modal = new ModalBuilder().setCustomId(`velora_settings_welcome_modal_${i.user.id}`).setTitle('Welcome Settings');
+    const msgInput = new TextInputBuilder().setCustomId('message').setLabel('Welcome Message').setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Use {user}, {guild}, {count} as placeholders').setRequired(false).setMaxLength(1000);
+    modal.addComponents(new ActionRowBuilder<any>().addComponents(msgInput));
+    await i.showModal(modal);
+    return;
+  }
+
+  // ==================== SETTINGS — GOODBYE ====================
+  if (id.startsWith('velora_settings_goodbye_')) {
+    if (!checkUser(i, id)) return;
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+    const modal = new ModalBuilder().setCustomId(`velora_settings_goodbye_modal_${i.user.id}`).setTitle('Goodbye Settings');
+    const msgInput = new TextInputBuilder().setCustomId('message').setLabel('Goodbye Message').setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Use {user}, {guild} as placeholders').setRequired(false).setMaxLength(1000);
+    modal.addComponents(new ActionRowBuilder<any>().addComponents(msgInput));
+    await i.showModal(modal);
+    return;
+  }
+
+  // ==================== SETTINGS — AUTOROLE ====================
+  if (id.startsWith('velora_settings_autorole_')) {
+    if (!checkUser(i, id)) return;
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+    const modal = new ModalBuilder().setCustomId(`velora_settings_autorole_modal_${i.user.id}`).setTitle('Auto-Role Settings');
+    const roleInput = new TextInputBuilder().setCustomId('role_ids').setLabel('Role IDs to auto-assign (comma separated)').setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('e.g. 123456789, 987654321').setRequired(false);
+    modal.addComponents(new ActionRowBuilder<any>().addComponents(roleInput));
+    await i.showModal(modal);
+    return;
+  }
+
+  // ==================== TICKET SETUP BUTTON ====================
+  if (id.startsWith('velora_ticket_setup_') && !id.includes('modal') && !id.includes('sendpanel')) {
+    if (!checkUser(i, id)) return;
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+    const modal = new ModalBuilder().setCustomId(`velora_ticket_setup_modal_${i.user.id}`).setTitle('Ticket System Setup');
+    const catInput     = new TextInputBuilder().setCustomId('category_id').setLabel('Ticket Category ID (optional)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Paste category channel ID');
+    const supportInput = new TextInputBuilder().setCustomId('support_roles').setLabel('Support Role IDs (comma-separated)').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('e.g. 123456, 789012');
+    modal.addComponents(
+      new ActionRowBuilder<any>().addComponents(catInput),
+      new ActionRowBuilder<any>().addComponents(supportInput),
+    );
+    await i.showModal(modal);
+    return;
+  }
 }

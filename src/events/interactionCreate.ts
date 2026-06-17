@@ -95,12 +95,101 @@ async function handleModal(i: ModalSubmitInteraction) {
     const supportRoles = (i.fields.getTextInputValue('support_roles') || '').split(',').map((s: string) => s.trim()).filter(Boolean);
     await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, {
       $set: {
-        'channels.ticketCategory': categoryId || undefined,
+        ...(categoryId && { 'channels.ticketCategory': categoryId }),
         'settings.tickets.supportRoles': supportRoles,
         'settings.tickets.enabled': true,
       }
     });
-    await i.reply({ content: `${E.Tick} Ticket system configured!`, ephemeral: true });
+    await i.reply({ content: `${E.Tick} Ticket system configured! Run \`??ticket panel\` to send the ticket panel.`, ephemeral: true });
+    return;
+  }
+
+  // ==================== PREFIX MODAL ====================
+  if (id.startsWith('velora_prefix_modal_')) {
+    const prefix = i.fields.getTextInputValue('prefix');
+    await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, { prefix }, { upsert: true });
+    await i.reply({ content: `${E.Tick} Prefix changed to \`${prefix}\``, ephemeral: true });
+    return;
+  }
+
+  // ==================== SETTINGS ROLES MODAL ====================
+  if (id.startsWith('velora_settings_roles_modal_')) {
+    const modRoleId   = i.fields.getTextInputValue('mod_role_id').trim();
+    const adminRoleId = i.fields.getTextInputValue('admin_role_id').trim();
+    const muteRoleId  = i.fields.getTextInputValue('mute_role_id').trim();
+    const verRoleId   = i.fields.getTextInputValue('verified_role_id').trim();
+    const update: any = {};
+    if (modRoleId)   update.$addToSet = { ...update.$addToSet, 'roles.modRoles': modRoleId };
+    if (adminRoleId) update.$addToSet = { ...update.$addToSet, 'roles.adminRoles': adminRoleId };
+    if (muteRoleId)  update.$set = { ...update.$set, 'roles.muteRole': muteRoleId };
+    if (verRoleId)   update.$set = { ...update.$set, 'roles.verifiedRole': verRoleId };
+    if (Object.keys(update).length) {
+      await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, update, { upsert: true });
+    }
+    const lines = [
+      modRoleId   && `Mod Role: <@&${modRoleId}>`,
+      adminRoleId && `Admin Role: <@&${adminRoleId}>`,
+      muteRoleId  && `Muted Role: <@&${muteRoleId}>`,
+      verRoleId   && `Verified Role: <@&${verRoleId}>`,
+    ].filter(Boolean).join('\n');
+    await i.reply({ content: `${E.Tick} Roles updated:\n${lines || 'No changes made.'}`, ephemeral: true });
+    return;
+  }
+
+  // ==================== SETTINGS CHANNELS MODAL ====================
+  if (id.startsWith('velora_settings_channels_modal_')) {
+    const modLogs    = i.fields.getTextInputValue('mod_logs_id').trim();
+    const serverLogs = i.fields.getTextInputValue('server_logs_id').trim();
+    const welcomeCh  = i.fields.getTextInputValue('welcome_id').trim();
+    const goodbyeCh  = i.fields.getTextInputValue('goodbye_id').trim();
+    const $set: any = {};
+    if (modLogs)    $set['channels.modLogs']        = modLogs;
+    if (serverLogs) $set['channels.serverLogs']     = serverLogs;
+    if (welcomeCh)  $set['channels.welcomeChannel'] = welcomeCh;
+    if (goodbyeCh)  $set['channels.goodbyeChannel'] = goodbyeCh;
+    if (Object.keys($set).length) {
+      await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, { $set }, { upsert: true });
+    }
+    const lines = [
+      modLogs    && `Mod Logs: <#${modLogs}>`,
+      serverLogs && `Server Logs: <#${serverLogs}>`,
+      welcomeCh  && `Welcome: <#${welcomeCh}>`,
+      goodbyeCh  && `Goodbye: <#${goodbyeCh}>`,
+    ].filter(Boolean).join('\n');
+    await i.reply({ content: `${E.Tick} Channels updated:\n${lines || 'No changes made.'}`, ephemeral: true });
+    return;
+  }
+
+  // ==================== SETTINGS WELCOME MODAL ====================
+  if (id.startsWith('velora_settings_welcome_modal_')) {
+    const message = i.fields.getTextInputValue('message').trim();
+    const $set: any = { 'settings.welcome.enabled': true };
+    if (message) $set['settings.welcome.message'] = message;
+    await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, { $set }, { upsert: true });
+    await i.reply({ content: `${E.Tick} Welcome settings saved! Message: \`${message || '(unchanged)'}\`\nVariables: {user}, {guild}, {count}`, ephemeral: true });
+    return;
+  }
+
+  // ==================== SETTINGS GOODBYE MODAL ====================
+  if (id.startsWith('velora_settings_goodbye_modal_')) {
+    const message = i.fields.getTextInputValue('message').trim();
+    const $set: any = { 'settings.goodbye.enabled': true };
+    if (message) $set['settings.goodbye.message'] = message;
+    await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, { $set }, { upsert: true });
+    await i.reply({ content: `${E.Tick} Goodbye settings saved!`, ephemeral: true });
+    return;
+  }
+
+  // ==================== SETTINGS AUTOROLE MODAL ====================
+  if (id.startsWith('velora_settings_autorole_modal_')) {
+    const roleIds = i.fields.getTextInputValue('role_ids').split(',').map((s: string) => s.trim()).filter(Boolean);
+    if (roleIds.length) {
+      await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, { $set: { 'roles.autoRoles': roleIds, 'settings.autorole.enabled': true } }, { upsert: true });
+      await i.reply({ content: `${E.Tick} Auto-roles set: ${roleIds.map((r: string) => `<@&${r}>`).join(', ')}`, ephemeral: true });
+    } else {
+      await GuildModelImport.findOneAndUpdate({ guildId: i.guild!.id }, { $set: { 'roles.autoRoles': [], 'settings.autorole.enabled': false } }, { upsert: true });
+      await i.reply({ content: `${E.Tick} Auto-roles cleared.`, ephemeral: true });
+    }
     return;
   }
 }

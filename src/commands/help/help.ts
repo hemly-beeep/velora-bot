@@ -54,7 +54,7 @@ export default {
       'AutoMod': ['automod', 'badwords'],
       'Protection': ['antiraid', 'antinuke', 'panic', 'globalban'],
       'Logging': ['setlogs', 'logs'],
-      'Settings': ['settings', 'setprefix', 'setrole', 'welcome'],
+      'Settings': ['settings', 'autosetup', 'setprefix', 'setrole', 'welcome'],
       'Verification': ['verification'],
       'ReactionRoles': ['reactionroles'],
       'Tickets': ['ticket'],
